@@ -9,6 +9,8 @@ from scipy import stats
 from fpdf import FPDF
 import os
 import re
+import plotly.io as pio
+pio.kaleido.scope.chromium_args += ("--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage")
 
 def parse_float(val):
     if pd.isna(val): return 0.0
