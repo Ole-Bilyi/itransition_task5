@@ -312,20 +312,14 @@ if "reset_counter" not in st.session_state:
 st.sidebar.header("Configuration")
 sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS3P8AUGWigUmZAVBBgxYYn1v8C3e-B3yPEPAGFeJSeisJ09aOwrZvadkkB5Ogo4LykEkEfK96vD18M/pub?output=csv"
 
-st.sidebar.markdown(
-    "Configuration is loaded once and stays stable while you change chart/test settings. "
-    "Use the button below after editing the Google Sheet."
-)
+st.sidebar.markdown("**To update data:** please refresh the page. If data didn't change - refresh again.")
 
-# Load the sheet only on the first visit or when the user explicitly refreshes it.
-# Ordinary Streamlit widget reruns will reuse this saved configuration.
 if "loaded_params" not in st.session_state:
     st.session_state.loaded_params = None
 if "simulation_version" not in st.session_state:
     st.session_state.simulation_version = 0
 
-refresh_clicked = st.sidebar.button("Refresh configuration from Google Sheets")
-if st.session_state.loaded_params is None or refresh_clicked:
+if st.session_state.loaded_params is None:
     fresh_params = load_parameters(sheet_url)
     if fresh_params is not None:
         st.session_state.loaded_params = fresh_params
@@ -417,8 +411,6 @@ if params:
         hovermode="x unified",
         template="plotly_white",
         height=500,
-        # Always show the complete configured date range instead of retaining
-        # an accidental partial zoom range in the chart UI.
         xaxis=dict(
             range=[df["Date"].min(), df["Date"].max()],
             autorange=False,
@@ -426,7 +418,6 @@ if params:
         ),
     )
 
-    # Diagnostic line: confirms the spreadsheet setting and actual dataset length.
     st.caption(
         f"Configured days: {params['days_count']} | "
         f"Generated dates: {len(df)} | "
