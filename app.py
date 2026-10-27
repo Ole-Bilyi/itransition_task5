@@ -187,6 +187,9 @@ def generate_pdf(df, params, test_method, kwargs, trend_type):
     pdf = PDFReport()
     targets = ['Total'] + params['mines']
     
+    degree = int(trend_type.split('(')[1][0]) if "Poly" in trend_type else 1
+    x_idx = np.arange(len(df))
+    
     for target in targets:
         pdf.add_page()
         
@@ -222,13 +225,19 @@ def generate_pdf(df, params, test_method, kwargs, trend_type):
         anomalies_mask = detect_anomalies(df[target], test_method, **kwargs)
         anom_data = df[anomalies_mask]
         
+        z = np.polyfit(x_idx, series, degree)
+        p = np.poly1d(z)
+        trendline = p(x_idx) 
+        
         if anom_data.empty:
             pdf.set_font('helvetica', 'I', 10)
             pdf.cell(0, 10, "No anomalies detected with the current parameters.", ln=True)
         else:
-            mean_val = series.mean()
-            spikes = anom_data[anom_data[target] > mean_val]
-            drops = anom_data[anom_data[target] <= mean_val]
+            spike_indices = [i for i in anom_data.index if series.loc[i] > trendline[i]]
+            drop_indices = [i for i in anom_data.index if series.loc[i] <= trendline[i]]
+            
+            spikes = anom_data.loc[spike_indices]
+            drops = anom_data.loc[drop_indices]
             
             def render_anomaly_table(data, title, color):
                 if data.empty: return
@@ -240,20 +249,24 @@ def generate_pdf(df, params, test_method, kwargs, trend_type):
                 pdf.set_font('helvetica', 'B', 9)
                 pdf.cell(40, 8, "Date", border=1)
                 pdf.cell(50, 8, "Value", border=1)
-                pdf.cell(50, 8, "Deviation (%)", border=1)
+                pdf.cell(50, 8, "Deviation from Trend (%)", border=1)
                 pdf.ln()
                 
                 pdf.set_font('helvetica', '', 9)
-                for _, row in data.iterrows():
-                    dev_pct = ((row[target] - mean_val) / mean_val) * 100
+                for idx, row in data.iterrows():
+                    baseline = trendline[idx]
+                    if baseline <= 0:
+                        dev_pct = 0.0
+                    else:
+                        dev_pct = ((row[target] - baseline) / baseline) * 100
                     pdf.cell(40, 8, row['Date'].strftime('%Y-%m-%d'), border=1)
                     pdf.cell(50, 8, f"{row[target]:.2f}", border=1)
-                    pdf.cell(50, 8, f"{dev_pct:.2f}%", border=1)
+                    pdf.cell(50, 8, f"{dev_pct:+.2f}%", border=1)
                     pdf.ln()
                 pdf.ln(5)
                 
-            render_anomaly_table(spikes, "Spikes (Above Mean)", (200, 0, 0))
-            render_anomaly_table(drops, "Drops (Below Mean)", (0, 0, 200))
+            render_anomaly_table(spikes, "Spikes (Above Trend)", (200, 0, 0))
+            render_anomaly_table(drops, "Drops (Below Trend)", (0, 0, 200))
             
         pdf.ln(5)
         
@@ -277,7 +290,6 @@ def generate_pdf(df, params, test_method, kwargs, trend_type):
         os.remove(temp_img)
         pdf.ln(5)
         
-        # 3. Stacked Bar Chart (ONLY for Total)
         if target == 'Total':
             img_stack = build_chart_image(df, target, "Stacked Bar", trend_type, test_method, kwargs)
             temp_img = f"temp_stack_{safe_target}.png"
@@ -288,25 +300,21 @@ def generate_pdf(df, params, test_method, kwargs, trend_type):
 
     pdf.output("Weyland_Yutani_Report.pdf")
 
-# --- MAIN UI ---
 st.set_page_config(page_title="Weyland-Yutani Mining Ops", layout="wide")
 st.title("Weyland-Yutani Corp. | Mining Ops Simulator")
 
-# Initialize reset counter
 if "reset_counter" not in st.session_state:
     st.session_state.reset_counter = 0
 
 st.sidebar.header("Configuration")
 sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS3P8AUGWigUmZAVBBgxYYn1v8C3e-B3yPEPAGFeJSeisJ09aOwrZvadkkB5Ogo4LykEkEfK96vD18M/pub?output=csv"
 
-# Instructional text
-st.sidebar.markdown("🔄 **To update data:** please refresh the page. If data didn't change - refresh again.")
+st.sidebar.markdown("**To update data:** please refresh the page. If data didn't change - refresh again.")
 
 params = load_parameters(sheet_url)
 if params:
     df = generate_simulation_data(params)
     
-    # Append counter to keys to force total reset when button is clicked
     k_suffix = f"_{st.session_state.reset_counter}"
     
     st.sidebar.header("Anomaly Detection Settings")
@@ -331,7 +339,6 @@ if params:
     chart_type = st.sidebar.radio("Chart Type", ["Line", "Bar", "Stacked Bar"], key=f"chart_type{k_suffix}")
     trend_type = st.sidebar.selectbox("Trendline", ["Linear (1)", "Poly (2)", "Poly (3)", "Poly (4)"], key=f"trend_type{k_suffix}")
     
-    # ALL MINES Summary Table
     st.subheader("Statistical Summary (All Targets)")
     metrics_list = []
     for target in params['mines'] + ['Total']:
@@ -345,7 +352,6 @@ if params:
         })
     st.dataframe(pd.DataFrame(metrics_list).set_index("Target"), use_container_width=True)
     
-    # Chart for Total
     st.subheader("Production Trends & Anomalies (Total)")
     
     fig = go.Figure()
@@ -395,7 +401,6 @@ if params:
     
     st.plotly_chart(fig, use_container_width=True)
     
-    # PDF Generation
     st.subheader("Report Generation")
     st.markdown("Choose the test and trendline to generate a detailed PDF containing metrics, charts, and anomaly logs for **all** mines and the total.")
     
