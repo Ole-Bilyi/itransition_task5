@@ -17,10 +17,13 @@ def parse_float(val):
     if val_str.endswith('%'): return float(val_str.strip('%')) / 100.0
     return float(val_str)
 
-@st.cache_data(ttl=5)
 def load_parameters(sheet_url):
     try:
-        response = requests.get(sheet_url)
+        response = requests.get(
+            sheet_url,
+            params={"_refresh": datetime.datetime.now().timestamp()},
+            timeout=20,
+        )
         response.raise_for_status()
         df = pd.read_csv(io.StringIO(response.text), header=None)
         
@@ -59,7 +62,7 @@ def load_parameters(sheet_url):
         return None
 
 @st.cache_data
-def generate_simulation_data(params):
+def generate_simulation_data(params, simulation_version=0):
     
     dates = pd.date_range(start=params['start_date'], periods=params['days_count'])
     df = pd.DataFrame({'Date': dates})
@@ -309,11 +312,28 @@ if "reset_counter" not in st.session_state:
 st.sidebar.header("Configuration")
 sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS3P8AUGWigUmZAVBBgxYYn1v8C3e-B3yPEPAGFeJSeisJ09aOwrZvadkkB5Ogo4LykEkEfK96vD18M/pub?output=csv"
 
-st.sidebar.markdown("**To update data:** please refresh the page. If data didn't change - refresh again.")
+st.sidebar.markdown(
+    "Configuration is loaded once and stays stable while you change chart/test settings. "
+    "Use the button below after editing the Google Sheet."
+)
 
-params = load_parameters(sheet_url)
+# Load the sheet only on the first visit or when the user explicitly refreshes it.
+# Ordinary Streamlit widget reruns will reuse this saved configuration.
+if "loaded_params" not in st.session_state:
+    st.session_state.loaded_params = None
+if "simulation_version" not in st.session_state:
+    st.session_state.simulation_version = 0
+
+refresh_clicked = st.sidebar.button("Refresh configuration from Google Sheets")
+if st.session_state.loaded_params is None or refresh_clicked:
+    fresh_params = load_parameters(sheet_url)
+    if fresh_params is not None:
+        st.session_state.loaded_params = fresh_params
+        st.session_state.simulation_version += 1
+
+params = st.session_state.loaded_params
 if params:
-    df = generate_simulation_data(params)
+    df = generate_simulation_data(params, st.session_state.simulation_version)
     
     k_suffix = f"_{st.session_state.reset_counter}"
     
@@ -396,9 +416,22 @@ if params:
         yaxis_title="Output",
         hovermode="x unified",
         template="plotly_white",
-        height=500
+        height=500,
+        # Always show the complete configured date range instead of retaining
+        # an accidental partial zoom range in the chart UI.
+        xaxis=dict(
+            range=[df["Date"].min(), df["Date"].max()],
+            autorange=False,
+            rangeslider=dict(visible=False),
+        ),
     )
-    
+
+    # Diagnostic line: confirms the spreadsheet setting and actual dataset length.
+    st.caption(
+        f"Configured days: {params['days_count']} | "
+        f"Generated dates: {len(df)} | "
+        f"Range: {df['Date'].min():%Y-%m-%d} – {df['Date'].max():%Y-%m-%d}"
+    )
     st.plotly_chart(fig, use_container_width=True)
     
     st.subheader("Report Generation")
