@@ -60,7 +60,6 @@ def load_parameters(sheet_url):
 
 @st.cache_data
 def generate_simulation_data(params):
-    np.random.seed(datetime.datetime.now().microsecond)
     
     dates = pd.date_range(start=params['start_date'], periods=params['days_count'])
     df = pd.DataFrame({'Date': dates})
@@ -264,7 +263,6 @@ def generate_pdf(df, params, test_method, kwargs, trend_type):
         
         safe_target = re.sub(r'[^a-zA-Z0-9]', '_', target)
         
-        # 1. Line Chart (for all targets)
         img_line = build_chart_image(df, target, "Line", trend_type, test_method, kwargs)
         temp_img = f"temp_line_{safe_target}.png"
         with open(temp_img, "wb") as f: f.write(img_line)
@@ -272,7 +270,6 @@ def generate_pdf(df, params, test_method, kwargs, trend_type):
         os.remove(temp_img)
         pdf.ln(5)
         
-        # 2. Bar Chart (for all targets)
         img_bar = build_chart_image(df, target, "Bar", trend_type, test_method, kwargs)
         temp_img = f"temp_bar_{safe_target}.png"
         with open(temp_img, "wb") as f: f.write(img_bar)
